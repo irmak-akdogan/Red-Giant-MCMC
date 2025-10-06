@@ -1,4 +1,15 @@
-runs/
+# cache 
+__pycache__/
+*.pyc
+*.pyo
+
+# DStore
+.DS_Store
+
+# images, numpy arrays, csv files
 *.png
 *.npy
 *.csv
+
+# runs folder 
+runs/
