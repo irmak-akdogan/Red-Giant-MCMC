@@ -18,7 +18,7 @@ from tqdm import tqdm
 import multiprocessing as mp
 from multiprocessing import cpu_count
 
-table = pd.read_csv("/Users/student/Desktop/merged_data.csv")
+table = pd.read_csv("/Users/student/Desktop/RedGiant_MCMC/merged_data.csv")
 
 NYQUIST = 283.2114
 nwalkers = 15
@@ -39,7 +39,6 @@ def model(nu, theta , reshape = True):
 
     if reshape:
         nu = np.reshape(nu, (1, -1))
-
         nu_max = np.reshape(nu_max, (-1, 1))
         H = np.reshape(H, (-1, 1))
         P = np.reshape(P,(-1, 1))
@@ -50,7 +49,9 @@ def model(nu, theta , reshape = True):
     b = granulation(nu, P, tau, alpha )
     g = excess(nu, nu_max, H)
 
-    return (W + eta * (b + g))[0] 
+    model = (W + eta * (b + g))
+
+    return model[0] 
 
 # PSD model per deassis
 def damping(nu):
@@ -106,7 +107,7 @@ def lnprior(logtheta):
             150 < P < 2e6 and 
             2000 < tau < 100000 and 
             1 < alpha < 6 and 
-            0.1 < W < 1000):
+            0.1 < W < 10000):
         return -np.inf
     else: 
         return 0.0
@@ -247,21 +248,30 @@ def get_cov(sampler, show=False):
 
     return cov, fig
 
-def posteriors(sampler , j): 
+def posteriors(sampler , j, n = 20): 
 
     name = int(table.iloc[j]["KIC"])
-    samples = sampler.get_chain(flat = True, discard = discard)
+    chain  = sampler.get_chain(flat = True, discard = discard)
+    H = 10**(chain[:,1])
+    P = 10**(chain[:,2])
+    tau = 10**(chain[:,3])
+    W = 10**(chain[:,5])
+    samples = np.column_stack([chain[:,0], H, P, tau, chain[:,4], W])
+
+    #the data
     data = grab_data(name)
-    
     fig = plt.figure(figsize=(10, 6))
     plt.plot(data[0], data[1], color="black", alpha=0.7)
 
-    for i in np.random.choice(samples.shape[0], size=50, replace=False):
-        draw = samples[i]
-        x = np.linspace(1, NYQUIST, 200)
-        model_draw = model(x, draw)
-        plt.plot(x, model_draw, color = "orange", alpha=0.1 )
+    x = np.logspace(np.log10(1), np.log10(NYQUIST), 100)
 
+    #posterior draws
+    for i in np.random.choice(samples.shape[0], size=n, replace=False):
+        draw = samples[i]
+        model_draw = model(x, draw)
+        plt.plot(x, model_draw, color="orange", alpha=0.1)
+
+    #initial guess
     theta = np.append(table.iloc[j][['nu_max', 'H', 'P', 'tau', 'alpha']], 10)
     plt.plot(x, model(x, theta), color = "red", alpha=1)
 
@@ -377,7 +387,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run MCMC by star index range.")
     parser.add_argument("start", type=int, help="Start index")
     parser.add_argument("end", type=int, help="End index (exclusive)")
-    parser.add_argument("run_id", type=int, default=0, help="Run number (default: 0)")
+    parser.add_argument("run_id", type=int, help="Run number (default: 0)")
 
     args = parser.parse_args()
     print(f"Running stars {args.start}:{args.end} for run {args.run_id}")
