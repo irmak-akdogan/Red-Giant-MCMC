@@ -23,7 +23,7 @@ table = pd.read_csv(data_path)
 
 NYQUIST = 283.2114
 nwalkers = 15
-niter = 5000
+niter = 50_000
 ndim = 6
 discard = niter // 5 
 
