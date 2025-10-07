@@ -18,7 +18,8 @@ from tqdm import tqdm
 import multiprocessing as mp
 from multiprocessing import cpu_count
 
-table = pd.read_csv("/Users/student/Desktop/RedGiant_MCMC/merged_data.csv")
+data_path = os.environ.get("RED_GIANT_DATA_PATH", "/Users/student/Desktop/RedGiant_MCMC/merged_data.csv")
+table = pd.read_csv(data_path)
 
 NYQUIST = 283.2114
 nwalkers = 15
