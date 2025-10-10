@@ -310,15 +310,27 @@ def run_one_star(index, row, progress_id, progress_queue):
     return index , sampler, cov
 
 def run(start, end, r = 0):
-
     rows = list(table.iloc[start:end].iterrows())
     progress_queue = mp.Manager().Queue()
 
+    # prepare output directory before launching workers so workers can report
+    os.makedirs("runs", exist_ok=True)
+    outdir = f"runs/run {r}"
+    os.makedirs(outdir, exist_ok=True)
+
+    # summary CSV to append per-star results as they complete
+    summary_path = os.path.join(outdir, "summary.csv")
+    header_written = os.path.exists(summary_path)
+
+    # will collect results incrementally as stars finish
+    results = []
+    idx_to_future = {}
+
     with ProcessPoolExecutor(max_workers= cpu_count()) as executor:
-        futures = {
-            executor.submit(run_one_star, index, row, index, progress_queue): index
-            for index, row in rows
-        }
+        # submit all jobs and keep a mapping from index -> future
+        for index, row in rows:
+            future = executor.submit(run_one_star, index, row, index, progress_queue)
+            idx_to_future[index] = future
 
         # create 2 tqdm bars per star, labeled with the actual index
         burn_bars = {idx: tqdm(total=1000, desc=f"Burn-in {idx}", position=2*i)
@@ -327,33 +339,124 @@ def run(start, end, r = 0):
                     for i, idx in enumerate([idx for idx, _ in rows])}
 
         finished = 0
+        # listen to progress queue and when a star is done, fetch and save its result
         while finished < len(rows):
             msg_type, idx, value = progress_queue.get()
             if msg_type == "burn":
-                burn_bars[idx].n = value
-                burn_bars[idx].refresh()
+                if idx in burn_bars:
+                    burn_bars[idx].n = value
+                    burn_bars[idx].refresh()
             elif msg_type == "prod":
-                prod_bars[idx].n = value
-                prod_bars[idx].refresh()
+                if idx in prod_bars:
+                    prod_bars[idx].n = value
+                    prod_bars[idx].refresh()
             elif msg_type == "done":
                 finished += 1
 
-        results = []
-        for f in futures:
-            idx, sampler, cov = f.result()
-            results.append((idx, sampler, cov))
+                # retrieve the corresponding future and its result (should be ready)
+                future = idx_to_future.get(idx)
+                if future is None:
+                    print(f"Warning: no future found for finished star {idx}")
+                    continue
+
+                try:
+                    idx_res, sampler, cov = future.result()
+
+                    # save per-star files immediately so progress is persisted
+                    # store flattened chain + metadata (more portable than pickling the sampler)
+                    try:
+                        chain_flat = sampler.get_chain(flat=True, discard=discard)
+                    except Exception:
+                        # fallback to attribute if present
+                        chain_flat = getattr(sampler, 'flatchain', None)
+
+                    try:
+                        lnprob = sampler.get_log_prob(flat=True, discard=discard)
+                    except Exception:
+                        lnprob = None
+
+                    acceptance = getattr(sampler, 'acceptance_fraction', None)
+
+                    param_names = ['nu_max', 'H', 'P', 'tau', 'alpha', 'W']
+
+                    np.savez_compressed(
+                        f"{outdir}/{idx_res}_chain.npz",
+                        chain=chain_flat,
+                        lnprob=lnprob,
+                        acceptance=acceptance,
+                        nwalkers=nwalkers,
+                        ndim=ndim,
+                        param_names=','.join(param_names),
+                    )
+
+                    np.save(f"{outdir}/{idx_res}_cov.npy", cov)
+
+                    # keep storing sampler in results (aggregated snapshot still saves samplers)
+                    results.append((idx_res, sampler, cov))
+
+                    # compute parameter estimates and append a summary row
+                    try:
+                        ests = parameter_estimates(sampler)
+                        # ests: list of (median, minus, plus) for each param
+                        cols = [
+                            'index', 'kic', 'sampler_file', 'cov_file',
+                            'nu_max_med', 'nu_max_minus', 'nu_max_plus',
+                            'H_med', 'H_minus', 'H_plus',
+                            'P_med', 'P_minus', 'P_plus',
+                            'tau_med', 'tau_minus', 'tau_plus',
+                            'alpha_med', 'alpha_minus', 'alpha_plus',
+                            'W_med', 'W_minus', 'W_plus'
+                        ]
+
+                        medians = []
+                        for m, lo, hi in ests:
+                            medians.extend([m, lo, hi])
+
+                        kic_val = int(table.iloc[idx_res]["KIC"]) if idx_res < len(table) else ''
+                        row = {
+                            'index': idx_res,
+                            'kic': kic_val,
+                            'sampler_file': f"{idx_res}_chain.npz",
+                            'cov_file': f"{idx_res}_cov.npy",
+                        }
+
+                        # add medians and errors
+                        param_names = ['nu_max', 'H', 'P', 'tau', 'alpha', 'W']
+                        for i, name in enumerate(param_names):
+                            row[f"{name}_med"] = medians[3*i]
+                            row[f"{name}_minus"] = medians[3*i+1]
+                            row[f"{name}_plus"] = medians[3*i+2]
+
+                        # append to CSV (using pandas to handle header automatically)
+                        df_row = pd.DataFrame([row])
+                        df_row.to_csv(summary_path, mode='a', header=not header_written, index=False)
+                        header_written = True
+                    except Exception as e:
+                        print(f"Warning: couldn't write summary row for star {idx_res}: {e}")
+
+                    # mark progress bars as complete for this star
+                    if idx in burn_bars:
+                        burn_bars[idx].n = burn_bars[idx].total
+                        burn_bars[idx].refresh()
+                    if idx in prod_bars:
+                        prod_bars[idx].n = prod_bars[idx].total
+                        prod_bars[idx].refresh()
+
+                except Exception as e:
+                    print(f"Error retrieving result for star {idx}: {e}")
+
+    # sort and save aggregated arrays (final snapshot)
+    if len(results) == 0:
+        print("No results to save.")
+        return
 
     results.sort(key=lambda x: x[0])
     indices, sampler_list, cov_list = zip(*results)
-    
-    os.makedirs("runs", exist_ok=True)
-    outdir = f"runs/run {r}"
-    os.makedirs(outdir, exist_ok=True)
 
-    np.save(f"{outdir}/samplers.npy", np.array(sampler_list))
+    np.save(f"{outdir}/samplers.npy", np.array(sampler_list, dtype=object), allow_pickle=True)
     np.save(f"{outdir}/cov_matrices.npy", np.array(cov_list))
     np.save(f"{outdir}/indices.npy", np.array(indices))
-    np.save(f"{outdir}/results.npy", np.array(results, dtype=object))
+    np.save(f"{outdir}/results.npy", np.array(results, dtype=object), allow_pickle=True)
 
 def grab_plots(r, offset = 0, samplers = None): 
 
