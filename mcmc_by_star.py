@@ -407,6 +407,32 @@ def run(start, end, r = 0):
                         # append lightweight result (index, medians list, cov)
                         results.append((idx_res, medians, cov))
 
+                        # generate plots immediately before discarding sampler
+                        try:
+                            # covariance matrix plot
+                            cov_result, fig = get_cov(sampler, show=True)
+                            fig.savefig(f"{outdir}/{idx_res}_cov_matrix.png")
+                            plt.close(fig)
+
+                            # corner plot
+                            fig = corner_plot(sampler)
+                            fig.savefig(f"{outdir}/{idx_res}_corner.png")
+                            plt.close(fig)
+
+                            # convergence plot
+                            fig = check_convergence(sampler)
+                            fig.savefig(f"{outdir}/{idx_res}_convergence.png")
+                            plt.close(fig)
+
+                            # posteriors plot
+                            fig = posteriors(sampler, idx_res)
+                            fig.savefig(f"{outdir}/{idx_res}_posteriors.png")
+                            plt.close(fig)
+
+                            print(f"Plots saved for star {idx_res}")
+                        except Exception as e:
+                            print(f"Warning: couldn't generate plots for star {idx_res}: {e}")
+
                         # explicitly drop sampler to avoid keeping large objects in memory
                         try:
                             del sampler
@@ -480,4 +506,5 @@ if __name__ == "__main__":
     args = parser.parse_args()
     print(f"Running stars {args.start}:{args.end} for run {args.run_id}")
     run(args.start, args.end,r = args.run_id )
-    grab_plots(r = args.run_id, offset = args.start )
+    # grab_plots() is disabled since we no longer save samplers
+    # grab_plots(r = args.run_id, offset = args.start )
