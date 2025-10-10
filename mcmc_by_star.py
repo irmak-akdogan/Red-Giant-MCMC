@@ -23,7 +23,7 @@ table = pd.read_csv(data_path)
 
 NYQUIST = 283.2114
 nwalkers = 15
-niter = 50_000
+niter = 5_000
 ndim = 6
 discard = niter // 5 
 
@@ -143,7 +143,9 @@ def main(p0, data, position, progress_queue):
 
 def get_cov(sampler, show = False):
 
-    cov = np.corrcoef(sampler.flatchain.T)
+    # use get_chain() instead of flatchain for compatibility
+    flat_chain = sampler.get_chain(flat=True, discard=discard)
+    cov = np.corrcoef(flat_chain.T)
 
     if not show: 
         return cov 
@@ -184,8 +186,10 @@ def corner_plot(sampler):
 
 def parameter_estimates(sampler):
     estimates = []
-    for i in range(sampler.flat_samples.shape[1]):
-        mcmc = np.percentile(sampler.flat_samples[:, i], [16, 50, 84])
+    # use get_chain() instead of flat_samples for compatibility
+    flat_chain = sampler.get_chain(flat=True, discard=discard)
+    for i in range(flat_chain.shape[1]):
+        mcmc = np.percentile(flat_chain[:, i], [16, 50, 84])
         q = np.diff(mcmc)
         estimates.append((mcmc[1], q[0], q[1]))
     return estimates
