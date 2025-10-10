@@ -362,38 +362,6 @@ def run(start, end, r = 0):
                 try:
                     idx_res, sampler, cov = future.result()
 
-                    # save per-star files immediately so progress is persisted
-                    # store flattened chain + metadata (more portable than pickling the sampler)
-                    try:
-                        chain_flat = sampler.get_chain(flat=True, discard=discard)
-                    except Exception:
-                        # fallback to attribute if present
-                        chain_flat = getattr(sampler, 'flatchain', None)
-
-                    try:
-                        lnprob = sampler.get_log_prob(flat=True, discard=discard)
-                    except Exception:
-                        lnprob = None
-
-                    acceptance = getattr(sampler, 'acceptance_fraction', None)
-
-                    param_names = ['nu_max', 'H', 'P', 'tau', 'alpha', 'W']
-
-                    np.savez_compressed(
-                        f"{outdir}/{idx_res}_chain.npz",
-                        chain=chain_flat,
-                        lnprob=lnprob,
-                        acceptance=acceptance,
-                        nwalkers=nwalkers,
-                        ndim=ndim,
-                        param_names=','.join(param_names),
-                    )
-
-                    np.save(f"{outdir}/{idx_res}_cov.npy", cov)
-
-                    # keep storing sampler in results (aggregated snapshot still saves samplers)
-                    results.append((idx_res, sampler, cov))
-
                     # compute parameter estimates and append a summary row
                     try:
                         ests = parameter_estimates(sampler)
@@ -413,10 +381,11 @@ def run(start, end, r = 0):
                             medians.extend([m, lo, hi])
 
                         kic_val = int(table.iloc[idx_res]["KIC"]) if idx_res < len(table) else ''
+                        # we no longer save samplers or chain files
                         row = {
                             'index': idx_res,
                             'kic': kic_val,
-                            'sampler_file': f"{idx_res}_chain.npz",
+                            'sampler_file': '',
                             'cov_file': f"{idx_res}_cov.npy",
                         }
 
@@ -427,12 +396,24 @@ def run(start, end, r = 0):
                             row[f"{name}_minus"] = medians[3*i+1]
                             row[f"{name}_plus"] = medians[3*i+2]
 
+                        # save only cov matrix (no sampler or chain)
+                        np.save(f"{outdir}/{idx_res}_cov.npy", cov)
+
                         # append to CSV (using pandas to handle header automatically)
                         df_row = pd.DataFrame([row])
                         df_row.to_csv(summary_path, mode='a', header=not header_written, index=False)
                         header_written = True
+
+                        # append lightweight result (index, medians list, cov)
+                        results.append((idx_res, medians, cov))
+
+                        # explicitly drop sampler to avoid keeping large objects in memory
+                        try:
+                            del sampler
+                        except Exception:
+                            pass
                     except Exception as e:
-                        print(f"Warning: couldn't write summary row for star {idx_res}: {e}")
+                        print(f"Warning: couldn't process results for star {idx_res}: {e}")
 
                     # mark progress bars as complete for this star
                     if idx in burn_bars:
@@ -451,12 +432,15 @@ def run(start, end, r = 0):
         return
 
     results.sort(key=lambda x: x[0])
-    indices, sampler_list, cov_list = zip(*results)
+    # results now contains tuples (index, medians_list, cov)
+    indices = [r[0] for r in results]
+    medians_list = [r[1] for r in results]
+    cov_list = [r[2] for r in results]
 
-    np.save(f"{outdir}/samplers.npy", np.array(sampler_list, dtype=object), allow_pickle=True)
-    np.save(f"{outdir}/cov_matrices.npy", np.array(cov_list))
+    # save lightweight aggregated outputs
     np.save(f"{outdir}/indices.npy", np.array(indices))
-    np.save(f"{outdir}/results.npy", np.array(results, dtype=object), allow_pickle=True)
+    np.save(f"{outdir}/medians.npy", np.array(medians_list))
+    np.save(f"{outdir}/cov_matrices.npy", np.array(cov_list))
 
 def grab_plots(r, offset = 0, samplers = None): 
 
