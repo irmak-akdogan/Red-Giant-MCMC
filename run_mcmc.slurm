@@ -10,9 +10,6 @@
 # Load miniconda module
 module load miniconda
 
-# Activate the astro environment
-source activate astro
-
 # Create logs directory if it doesn't exist
 mkdir -p logs
 
@@ -34,8 +31,10 @@ export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK}
 export MKL_NUM_THREADS=${SLURM_CPUS_PER_TASK}
 export NUMEXPR_NUM_THREADS=${SLURM_CPUS_PER_TASK}
 
+export RED_GIANT_DATA_PATH=/vast/palmer/home.grace/ael73/astero-unresolved-clusters/RedGiantPSD/data/merged-data/merged_data.csv
+
 # Run the MCMC script
-python mcmc_by_star.py ${START_IDX} ${END_IDX} ${RUN_ID}
+conda run -n irmak-code python mcmc_by_star.py ${START_IDX} ${END_IDX} ${RUN_ID}
 
 echo "=========================================="
 echo "Finished at: $(date)"
