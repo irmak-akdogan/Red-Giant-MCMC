@@ -13,3 +13,6 @@ __pycache__
 
 # runs folder 
 runs/
+
+# logs
+logs/
