@@ -305,7 +305,7 @@ def run_one_star(index, row, progress_id, progress_queue):
     logtheta = np.array([theta[0], np.log10(theta[1]), np.log10(theta[2]), np.log10(theta[3]), theta[4], np.log10(theta[5])])
     initial = np.array(logtheta)
 
-    bump = initial * 0.01
+    bump = initial * 0.0001
     p0 = [initial + bump * np.random.randn(ndim) for _ in range(nwalkers)]
 
     sampler, pos, prob, state = main(p0, data, position=progress_id, progress_queue=progress_queue)
