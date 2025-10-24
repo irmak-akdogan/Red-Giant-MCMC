@@ -66,7 +66,7 @@ def model(nu, theta, reshape=True):
 
     model_psd = W + eta * (b + g)
 
-    return model_psd[0] 
+    return model_psd[0]
 
 def damping(nu):
     """Calculate the damping factor (sinc function)."""
@@ -135,7 +135,7 @@ def lnprior(logtheta):
             1 < alpha < 6 and 
             0.1 < W < 10000):
         return -np.inf
-    else: 
+    else:
         return 0.0
 
 
