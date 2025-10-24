@@ -179,8 +179,33 @@ def grab_data(kic_num):
 
 ''' plots from sampler '''
 
-def corner_plot(sampler):
-    fig = corner.corner(sampler.get_chain(flat=True, discard = discard), labels=["numax", "H", "P", "tau", "alpha", "W"], show_titles=True, title_fmt=".3f", bins=30)
+def corner_plot(sampler, truths=None):
+    fig = corner.corner(sampler.get_chain(flat=True, discard = discard), labels=["numax", "log10(H)", "log10(P)", "log10(tau)", "alpha", "log10(W)"], show_titles=True, title_fmt=".3f", bins=30, truths=truths)
+
+    # Add text box with initial values if truths are provided
+    if truths is not None:
+        param_names = ["numax", "log10(H)", "log10(P)", "log10(tau)", "alpha", "log10(W)"]
+        
+        # Get the chain to calculate means and stds
+        flat_chain = sampler.get_chain(flat=True, discard=discard)
+        means = np.mean(flat_chain, axis=0)
+        stds = np.std(flat_chain, axis=0)
+        
+        # Calculate z-scores (how many standard deviations from mean)
+        z_scores = (truths - means) / stds
+        
+        # Build text with initial values and z-scores
+        truth_text = "Initial Values vs Posterior:\n"
+        for name, val, z in zip(param_names, truths, z_scores):
+            truth_text += f"{name} = {val:.3f} ({z:+.2f}σ)\n"
+        
+        # Add text box in the upper right corner of the figure
+        fig.text(0.98, 0.98, truth_text, 
+                transform=fig.transFigure, 
+                fontsize=9,
+                verticalalignment='top',
+                horizontalalignment='right',
+                bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
 
     return fig
 
@@ -301,7 +326,13 @@ def posteriors(sampler , j, n = 20):
 def run_one_star(index, row, progress_id, progress_queue):
 
     data = grab_data(int(row["KIC"]))
-    theta = np.append(row[['nu_max', 'H', 'P', 'tau', 'alpha']], 10)
+    freq, powers = data
+    
+    # Calculate W as the mean of the last 20 µHz of the PSD
+    mask = freq >= (NYQUIST - 20)
+    W_initial = np.mean(powers[mask])
+    
+    theta = np.append(row[['nu_max', 'H', 'P', 'tau', 'alpha']], W_initial)
     logtheta = np.array([theta[0], np.log10(theta[1]), np.log10(theta[2]), np.log10(theta[3]), theta[4], np.log10(theta[5])])
     initial = np.array(logtheta)
 
@@ -311,7 +342,7 @@ def run_one_star(index, row, progress_id, progress_queue):
     sampler, pos, prob, state = main(p0, data, position=progress_id, progress_queue=progress_queue)
     cov = get_cov(sampler, show=False)
 
-    return index , sampler, cov
+    return index , sampler, cov, logtheta
 
 def run(start, end, r = 0):
     rows = list(table.iloc[start:end].iterrows())
@@ -364,7 +395,7 @@ def run(start, end, r = 0):
                     continue
 
                 try:
-                    idx_res, sampler, cov = future.result()
+                    idx_res, sampler, cov, logtheta = future.result()
 
                     # compute parameter estimates and append a summary row
                     try:
@@ -419,7 +450,7 @@ def run(start, end, r = 0):
                             plt.close(fig)
 
                             # corner plot
-                            fig = corner_plot(sampler)
+                            fig = corner_plot(sampler, truths=logtheta)
                             fig.savefig(f"{outdir}/{idx_res:05d}_corner.png")
                             plt.close(fig)
 
