@@ -390,7 +390,7 @@ def run(start, end, r = 0):
                             'index': idx_res,
                             'kic': kic_val,
                             'sampler_file': '',
-                            'cov_file': f"{idx_res}_cov.npy",
+                            'cov_file': f"{idx_res:05d}_cov.npy",
                         }
 
                         # add medians and errors
@@ -401,7 +401,7 @@ def run(start, end, r = 0):
                             row[f"{name}_plus"] = medians[3*i+2]
 
                         # save only cov matrix (no sampler or chain)
-                        np.save(f"{outdir}/{idx_res}_cov.npy", cov)
+                        np.save(f"{outdir}/{idx_res:05d}_cov.npy", cov)
 
                         # append to CSV (using pandas to handle header automatically)
                         df_row = pd.DataFrame([row])
@@ -415,22 +415,22 @@ def run(start, end, r = 0):
                         try:
                             # covariance matrix plot
                             cov_result, fig = get_cov(sampler, show=True)
-                            fig.savefig(f"{outdir}/{idx_res}_cov_matrix.png")
+                            fig.savefig(f"{outdir}/{idx_res:05d}_cov_matrix.png")
                             plt.close(fig)
 
                             # corner plot
                             fig = corner_plot(sampler)
-                            fig.savefig(f"{outdir}/{idx_res}_corner.png")
+                            fig.savefig(f"{outdir}/{idx_res:05d}_corner.png")
                             plt.close(fig)
 
                             # convergence plot
                             fig = check_convergence(sampler)
-                            fig.savefig(f"{outdir}/{idx_res}_convergence.png")
+                            fig.savefig(f"{outdir}/{idx_res:05d}_convergence.png")
                             plt.close(fig)
 
                             # posteriors plot
                             fig = posteriors(sampler, idx_res)
-                            fig.savefig(f"{outdir}/{idx_res}_posteriors.png")
+                            fig.savefig(f"{outdir}/{idx_res:05d}_posteriors.png")
                             plt.close(fig)
 
                             print(f"Plots saved for star {idx_res}")
@@ -481,19 +481,19 @@ def grab_plots(r, offset = 0, samplers = None):
 
         s = samplers[i]
         cov, fig = get_cov(s, show = True)
-        fig.savefig(f"runs/run {r}/{i+ offset}_cov_matrix.png")
+        fig.savefig(f"runs/run {r}/{i+ offset:05d}_cov_matrix.png")
         plt.close(fig)
 
         fig = corner_plot(s)
-        fig.savefig(f"runs/run {r}/{i+ offset}_corner.png")
+        fig.savefig(f"runs/run {r}/{i+ offset:05d}_corner.png")
         plt.close(fig)
 
         fig = check_convergence(s)
-        fig.savefig(f"runs/run {r}/{i+ offset}_convergence.png")
+        fig.savefig(f"runs/run {r}/{i+ offset:05d}_convergence.png")
         plt.close(fig)
 
         fig = posteriors(s, i+ offset)
-        fig.savefig(f"runs/run {r}/{i+ offset}_posteriors.png")
+        fig.savefig(f"runs/run {r}/{i+ offset:05d}_posteriors.png")
         plt.close(fig)
 
         print(f"Star {i+ offset} is done.")
