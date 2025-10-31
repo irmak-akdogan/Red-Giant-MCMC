@@ -179,8 +179,33 @@ def grab_data(kic_num):
 
 ''' plots from sampler '''
 
-def corner_plot(sampler):
-    fig = corner.corner(sampler.get_chain(flat=True, discard = discard), labels=["numax", "H", "P", "tau", "alpha", "W"], show_titles=True, title_fmt=".3f", bins=30)
+def corner_plot(sampler, truths=None):
+    fig = corner.corner(sampler.get_chain(flat=True, discard = discard), labels=["numax", "log10(H)", "log10(P)", "log10(tau)", "alpha", "log10(W)"], show_titles=True, title_fmt=".3f", bins=30, truths=truths)
+
+    # Add text box with initial values if truths are provided
+    if truths is not None:
+        param_names = ["numax", "log10(H)", "log10(P)", "log10(tau)", "alpha", "log10(W)"]
+        
+        # Get the chain to calculate means and stds
+        flat_chain = sampler.get_chain(flat=True, discard=discard)
+        means = np.mean(flat_chain, axis=0)
+        stds = np.std(flat_chain, axis=0)
+        
+        # Calculate z-scores (how many standard deviations from mean)
+        z_scores = (truths - means) / stds
+        
+        # Build text with initial values and z-scores
+        truth_text = "Initial Values vs Posterior:\n"
+        for name, val, z in zip(param_names, truths, z_scores):
+            truth_text += f"{name} = {val:.3f} ({z:+.2f}σ)\n"
+        
+        # Add text box in the upper right corner of the figure
+        fig.text(0.98, 0.98, truth_text, 
+                transform=fig.transFigure, 
+                fontsize=9,
+                verticalalignment='top',
+                horizontalalignment='right',
+                bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
 
     return fig
 
@@ -301,17 +326,23 @@ def posteriors(sampler , j, n = 20):
 def run_one_star(index, row, progress_id, progress_queue):
 
     data = grab_data(int(row["KIC"]))
-    theta = np.append(row[['nu_max', 'H', 'P', 'tau', 'alpha']], 10)
+    freq, powers = data
+    
+    # Calculate W as the mean of the last 20 µHz of the PSD
+    mask = freq >= (NYQUIST - 20)
+    W_initial = np.mean(powers[mask])
+    
+    theta = np.append(row[['nu_max', 'H', 'P', 'tau', 'alpha']], W_initial)
     logtheta = np.array([theta[0], np.log10(theta[1]), np.log10(theta[2]), np.log10(theta[3]), theta[4], np.log10(theta[5])])
     initial = np.array(logtheta)
 
-    bump = initial * 0.01
+    bump = initial * 0.0001
     p0 = [initial + bump * np.random.randn(ndim) for _ in range(nwalkers)]
 
     sampler, pos, prob, state = main(p0, data, position=progress_id, progress_queue=progress_queue)
     cov = get_cov(sampler, show=False)
 
-    return index , sampler, cov
+    return index , sampler, cov, logtheta
 
 def run(start, end, r = 0):
     rows = list(table.iloc[start:end].iterrows())
@@ -364,7 +395,7 @@ def run(start, end, r = 0):
                     continue
 
                 try:
-                    idx_res, sampler, cov = future.result()
+                    idx_res, sampler, cov, logtheta = future.result()
 
                     # compute parameter estimates and append a summary row
                     try:
@@ -390,7 +421,7 @@ def run(start, end, r = 0):
                             'index': idx_res,
                             'kic': kic_val,
                             'sampler_file': '',
-                            'cov_file': f"{idx_res}_cov.npy",
+                            'cov_file': f"{idx_res:05d}_cov.npy",
                         }
 
                         # add medians and errors
@@ -401,7 +432,7 @@ def run(start, end, r = 0):
                             row[f"{name}_plus"] = medians[3*i+2]
 
                         # save only cov matrix (no sampler or chain)
-                        np.save(f"{outdir}/{idx_res}_cov.npy", cov)
+                        np.save(f"{outdir}/{idx_res:05d}_cov.npy", cov)
 
                         # append to CSV (using pandas to handle header automatically)
                         df_row = pd.DataFrame([row])
@@ -415,22 +446,22 @@ def run(start, end, r = 0):
                         try:
                             # covariance matrix plot
                             cov_result, fig = get_cov(sampler, show=True)
-                            fig.savefig(f"{outdir}/{idx_res}_cov_matrix.png")
+                            fig.savefig(f"{outdir}/{idx_res:05d}_cov_matrix.png")
                             plt.close(fig)
 
                             # corner plot
-                            fig = corner_plot(sampler)
-                            fig.savefig(f"{outdir}/{idx_res}_corner.png")
+                            fig = corner_plot(sampler, truths=logtheta)
+                            fig.savefig(f"{outdir}/{idx_res:05d}_corner.png")
                             plt.close(fig)
 
                             # convergence plot
                             fig = check_convergence(sampler)
-                            fig.savefig(f"{outdir}/{idx_res}_convergence.png")
+                            fig.savefig(f"{outdir}/{idx_res:05d}_convergence.png")
                             plt.close(fig)
 
                             # posteriors plot
                             fig = posteriors(sampler, idx_res)
-                            fig.savefig(f"{outdir}/{idx_res}_posteriors.png")
+                            fig.savefig(f"{outdir}/{idx_res:05d}_posteriors.png")
                             plt.close(fig)
 
                             print(f"Plots saved for star {idx_res}")
@@ -481,19 +512,19 @@ def grab_plots(r, offset = 0, samplers = None):
 
         s = samplers[i]
         cov, fig = get_cov(s, show = True)
-        fig.savefig(f"runs/run {r}/{i+ offset}_cov_matrix.png")
+        fig.savefig(f"runs/run {r}/{i+ offset:05d}_cov_matrix.png")
         plt.close(fig)
 
         fig = corner_plot(s)
-        fig.savefig(f"runs/run {r}/{i+ offset}_corner.png")
+        fig.savefig(f"runs/run {r}/{i+ offset:05d}_corner.png")
         plt.close(fig)
 
         fig = check_convergence(s)
-        fig.savefig(f"runs/run {r}/{i+ offset}_convergence.png")
+        fig.savefig(f"runs/run {r}/{i+ offset:05d}_convergence.png")
         plt.close(fig)
 
         fig = posteriors(s, i+ offset)
-        fig.savefig(f"runs/run {r}/{i+ offset}_posteriors.png")
+        fig.savefig(f"runs/run {r}/{i+ offset:05d}_posteriors.png")
         plt.close(fig)
 
         print(f"Star {i+ offset} is done.")
