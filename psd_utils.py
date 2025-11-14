@@ -1,6 +1,8 @@
 import numpy as np
 import lightkurve as lk
 
+from numba import njit
+
 NYQUIST = 283.2114
 
 ''' model '''
@@ -26,24 +28,29 @@ def model(nu, theta , reshape = True):
     return model[0] 
 
 # PSD model per deassis
+@njit
 def damping(nu):
     eta = np.sinc((1 / 2) * (nu / NYQUIST)) ** 2
     return eta
 
+@njit
 def granulation(nu, P, tau, alpha ):
     granulation =  (P / (1 + (2 * np.pi * tau * 1e-6 * nu) ** alpha))
     if not np.isfinite(granulation).all():
         return nu * np.inf
     return granulation
 
+@njit
 def excess(nu, nu_max, H):
     FWHM = 0.66 * nu_max ** 0.88
     G = H * np.exp(-(nu - nu_max)**2 / (FWHM ** 2 / (4 * np.log(2))))
     return G
 
+@njit
 def nu_max(M, R, Teff, nu_max_solar = 3090, Teff_solar = 5777):
     return nu_max_solar * M * (R **-2) * ((Teff / Teff_solar)**-0.5)
 
+@njit
 def delta_nu(M, R, delta_nu_solar = 135.1):
     return delta_nu_solar * (M ** 0.5) * (R ** -1.5)
 
@@ -65,6 +72,7 @@ def lnlike(logtheta, freq , real_flux):
 
     return LnLike
 
+@njit
 def lnprior(logtheta):
 
     nu_max = logtheta[0]
