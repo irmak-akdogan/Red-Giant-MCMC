@@ -1,4 +1,5 @@
 import numpy as np
+import lightkurve as lk
 
 NYQUIST = 283.2114
 
@@ -89,3 +90,16 @@ def lnprob(logtheta, freq , real_flux):
         return -np.inf
     return (lp + lnlike(logtheta, freq , real_flux))
 
+def grab_data(kic_num):
+    search = lk.search_lightcurve('KIC ' + str(kic_num), author='Kepler')
+    lc_col: lk.LightCurveCollection = search.download_all() # type: ignore
+    lc = lc_col.stitch(lambda x: x.normalize('ppm'))
+    NYQUIST = 283.2114
+    valid = np.isfinite(lc.flux_err) & (lc.flux_err > 0)
+
+    pd = lc[valid].to_periodogram(normalization = 'psd', minimum_frequency = 1, maximum_frequency = NYQUIST)
+
+    freq = pd.frequency.to_value()
+    powers = pd.power.to_value()
+
+    return (freq, powers)
