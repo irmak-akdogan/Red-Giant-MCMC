@@ -1,16 +1,32 @@
 #!/bin/env python
 
+import numpy as np
 import pandas as pd
 
 import argparse
 import os
 
-def fit_star(kic_id: int, star_row: pd.Series):
-    pass
+from psd_utils import lnprob, grab_data
+
+from scipy.optimize import minimize, OptimizeResult
+
+def fit_star(kic_id: str, star_row: pd.Series):
+    freq, powers = grab_data(kic_id)
+
+    W0 = np.mean(powers[-40:])
+
+    x0 = np.array(list(star_row[["nu_max", "H", "P", "tau", "alpha"]]) + [W0])
+    
+    x0_logged = x0.copy()
+    x0_logged[[1, 2, 3, 5]] = np.log10(x0[[1, 2, 3, 5]])
+    
+    min_res: OptimizeResult = minimize(lambda t: -lnprob(t, freq, powers), x0_logged)
+
+    print(min_res)
 
 def fit_stars(data_table: pd.DataFrame):
-    for (kic_id, row) in data_table:
-        fit_star(kic_id, row)
+    for (kic_id, row) in data_table.iterrows():
+        fit_star(kic_id, row) # type: ignore
 
 def parse_args() -> pd.DataFrame:
     argparser = argparse.ArgumentParser()
@@ -48,7 +64,7 @@ def parse_args() -> pd.DataFrame:
     except Exception as e:
         argparser.error(f"Could not read {args.data_path}!\n{e}")
 
-    column_difference = {"KIC", "nu_max", "H", "P", "tau", "alpha"}.difference(full_df.columns)
+    column_difference = {"nu_max", "H", "P", "tau", "alpha"}.difference(full_df.columns)
     if column_difference:
         argparser.error(f"{args.data_path} does not have required columns {column_difference}")
 
