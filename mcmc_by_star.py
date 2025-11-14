@@ -80,7 +80,8 @@ def main(p0, data, position, progress_queue):
 
 def grab_data(kic_num):
     search = lk.search_lightcurve('KIC ' + str(kic_num), author='Kepler')
-    lc = search.download_all().stitch(lambda x: x.normalize('ppm'))
+    lc_col: lk.LightCurveCollection = search.download_all() # type: ignore
+    lc = lc_col.stitch(lambda x: x.normalize('ppm'))
     NYQUIST = 283.2114
     valid = np.isfinite(lc.flux_err) & (lc.flux_err > 0)
 
