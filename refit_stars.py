@@ -23,8 +23,9 @@ def mcmc_debug_plot(sampler: emcee.EnsembleSampler, truths=None):
     import matplotlib.pyplot as plt
     import corner
     chain_fig, axes = plt.subplots(sampler.ndim, 1)
-    chain: np.ndarray = sampler.get_chain(discard=100) #type: ignore
-    print(chain.shape)
+    chain_logged: np.ndarray = sampler.get_chain(discard=100) #type: ignore
+    chain = chain_logged.copy()
+    chain[:, :, [1, 2, 3, 5]] = 10**chain_logged[:, :, [1, 2, 3, 5]]
 
     for dim_idx, (name, ax) in enumerate(zip(PARAM_NAMES, axes)):
         ax.set_title(name)
@@ -46,7 +47,7 @@ def do_mcmc(x0_logged_center: np.ndarray, freq, flux):
     SPREAD = 1e-2
     x0_logged = x0_logged_center + SPREAD * np.random.randn(n_walkers, ndim)
 
-    N_STEPS = 200
+    N_STEPS = 1_100
     sampler.run_mcmc(x0_logged, N_STEPS, progress=True)
     print(sampler.chain.shape)
 
@@ -65,12 +66,16 @@ def process_star(kic_id: str, star_row: pd.Series):
     x0_logged[[1, 2, 3, 5]] = np.log10(x0[[1, 2, 3, 5]])
     
     min_res: OptimizeResult = minimize(lambda t: -lnprob(t, freq, powers)/len(freq), x0_logged)
-    chain: np.ndarray = do_mcmc(min_res.x, freq, powers) # type: ignore
+    
+    chain_logged: np.ndarray = do_mcmc(min_res.x, freq, powers) # type: ignore
+    
+    chain = chain_logged.copy()
+    chain[:, [1, 2, 3, 5]] = 10**chain_logged[:, [1, 2, 3, 5]]
+    
+    meds = np.median(chain, axis=0)
     cov = np.cov(chain.transpose())
 
-    min_res.x[[1, 2, 3, 5]] = 10**(min_res.x[[1, 2, 3, 5]])
-
-    return min_res, cov
+    return meds, cov, min_res.success, min_res.status
 
 def flatten_covariances(cov: np.ndarray) -> list[int]:
     flat_cov = []
@@ -89,9 +94,9 @@ def process_all_stars(data_table: pd.DataFrame, writer):
     writer.writerow(["KIC"] + PARAM_NAMES + ["success", "status"] + flat_cov_names)
 
     for (kic_id, row) in data_table.iterrows():
-        min_res, cov = process_star(kic_id, row) # type: ignore
+        meds, cov, success, status = process_star(kic_id, row) # type: ignore
         
-        out_row = [kic_id] + list(min_res.x) + [min_res.success, min_res.status] + flatten_covariances(cov)
+        out_row = [kic_id] + list(meds) + [success, status] + flatten_covariances(cov)
         out_row = map(str, out_row)
         
         writer.writerow(out_row)
